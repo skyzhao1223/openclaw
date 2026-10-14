@@ -1659,6 +1659,30 @@ describe("WorkboardStore", () => {
     await expect(store.linkCards(second.id, first.id)).rejects.toThrow(/cycle/);
   });
 
+  it("completes a card whose stored run id exceeds the notification reference bound", async () => {
+    const store = createWorkboardSqliteTestStore({ createStores: createKernelStores });
+    const longRunId = "r".repeat(164);
+    const card = await store.create({
+      title: "Long run id",
+      status: "running",
+      execution: codexExecution("exec-long", 1_000, { runId: longRunId }),
+    });
+    await store.claim(card.id, { ownerId: "main", token: "token-long" });
+
+    const completed = await store.complete(card.id, {
+      ownerId: "main",
+      token: "token-long",
+      summary: "Completed with a long stored run id.",
+      proof: { status: "passed", command: "pnpm test extensions/workboard" },
+    });
+
+    expect(completed.status).toBe("done");
+    expect(completed.metadata?.proof).toEqual([expect.objectContaining({ status: "passed" })]);
+    // The card keeps the full execution identity; the notification carries a bounded reference.
+    expect(completed.execution?.runId).toBe(longRunId);
+    expect(completed.metadata?.notifications?.at(-1)?.runId).toBe(longRunId.slice(0, 120));
+  });
+
   it("completes and blocks claimed cards with structured handoff metadata", async () => {
     const store = createWorkboardSqliteTestStore({ createStores: createKernelStores });
     const card = await store.create({

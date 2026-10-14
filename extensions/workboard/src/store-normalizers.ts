@@ -726,6 +726,17 @@ function normalizeDiagnostic(record: Record<string, unknown>): WorkboardDiagnost
   };
 }
 
+/** Notification references are bounded copies; the card keeps the full execution
+ * identity, so a valid stored run id must not fail the terminal commit that produced
+ * the notification. */
+function boundedNotificationReference(
+  value: string | undefined,
+  limit: number,
+): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, limit) : undefined;
+}
+
 function normalizeNotification(record: Record<string, unknown>): WorkboardNotification | null {
   const id = normalizeOptionalString(record.id) ?? randomUUID();
   const kind = normalizeEnumValue(record.kind, WORKBOARD_NOTIFICATION_KINDS, undefined);
@@ -736,7 +747,7 @@ function normalizeNotification(record: Record<string, unknown>): WorkboardNotifi
     return null;
   }
   const sessionKey = normalizeBoundedString(record.sessionKey, undefined, 240, "session key");
-  const runId = normalizeBoundedString(record.runId, undefined, 120, "run id");
+  const runId = boundedNotificationReference(normalizeOptionalString(record.runId), 120);
   return {
     id,
     kind,
