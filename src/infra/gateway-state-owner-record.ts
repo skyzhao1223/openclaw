@@ -23,21 +23,13 @@ import {
 import { isLockOwnerDefinitelyStale } from "./stale-lock-file.js";
 
 /**
- * Positive evidence only: the recorded process is alive and its observed start
- * identity still equals the recorded one. A record without a start time never
- * qualifies, so reclamation cannot be blocked indefinitely by missing evidence.
+ * Positive evidence only: a record without its own start identity never qualifies,
+ * so reclamation cannot be blocked indefinitely by missing evidence.
  */
-function processIdentityStillMatchesRecord(payload: Record<string, unknown> | null): boolean {
-  if (
-    payload === null ||
-    typeof payload.pid !== "number" ||
-    typeof payload.startTime !== "number"
-  ) {
-    return false;
-  }
-  return !isLockOwnerDefinitelyStale({
-    payload: { pid: payload.pid, starttime: payload.startTime },
-  });
+function hasRecordedStartIdentity(payload: Record<string, unknown> | null): boolean {
+  return (
+    payload !== null && typeof payload.pid === "number" && typeof payload.startTime === "number"
+  );
 }
 
 /** Admission and reclamation use the same namespace-qualified PID evidence. */
@@ -47,17 +39,25 @@ export function isGatewayStateOwnerDefinitelyStale(value: unknown, lockPath: str
   if (namespace === "unknown") {
     throw new GatewayLockNamespaceError(payload ?? {}, lockPath);
   }
+  // Process evidence keeps deciding on its own, as before.
+  if (
+    isLockOwnerDefinitelyStale({
+      payload: payload ? { pid: payload.pid, starttime: payload.startTime } : null,
+    })
+  ) {
+    return true;
+  }
   if (namespace !== "dead") {
     return false;
   }
   // Windows can report two valid but different boot identities for one boot, so a
   // different identity there is not proof of a previous boot. A same-host Windows
-  // owner whose recorded process is still alive with its recorded start identity
-  // blocks reclamation; Linux boot/PID-namespace and heartbeat verdicts stay as they
-  // were, including previous-boot recovery (#174895).
+  // owner whose recorded process still carries its own start identity blocks
+  // reclamation; Linux boot/PID-namespace and heartbeat verdicts stay as they were,
+  // including previous-boot recovery (#174895).
   return !(
     gatewayLockOwnerIsSameHostWindowsNamespace(payload?.processNamespace) &&
-    processIdentityStillMatchesRecord(payload)
+    hasRecordedStartIdentity(payload)
   );
 }
 
